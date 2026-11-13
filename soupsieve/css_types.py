@@ -291,7 +291,7 @@ class SelectorContains(Immutable):
 class SelectorNth(Immutable):
     """Selector nth type."""
 
-    __slots__ = ("a", "n", "b", "of_type", "last", "selectors", "_hash")
+    __slots__ = ("a", "n", "b", "of_type", "last", "selectors", "col", "_hash")
 
     a: int
     n: bool
@@ -299,8 +299,18 @@ class SelectorNth(Immutable):
     of_type: bool
     last: bool
     selectors: SelectorList
+    col: bool
 
-    def __init__(self, a: int, n: bool, b: int, of_type: bool, last: bool, selectors: SelectorList) -> None:
+    def __init__(
+        self,
+        a: int,
+        n: bool,
+        b: int,
+        of_type: bool,
+        last: bool,
+        selectors: SelectorList,
+        col: bool = False
+    ) -> None:
         """Initialize."""
 
         super().__init__(
@@ -309,7 +319,8 @@ class SelectorNth(Immutable):
             b=b,
             of_type=of_type,
             last=last,
-            selectors=selectors
+            selectors=selectors,
+            col=col
         )
 
 

@@ -1050,6 +1050,110 @@ Level 4+ CSS:material-flask:{: title="Experimental" data-md-color-primary="purpl
 > [!tip] Additional Reading
 > https://developer.mozilla.org/en-US/docs/Web/CSS/:nth-child
 
+## `#!css :nth-col()`:material-flask:{: title="Experimental" data-md-color-primary="purple" .icon} {:#:nth-col}
+
+`#!css :nth-col()` matches the cells (`#!html <td>` and `#!html <th>`) of an HTML table whose column position,
+following the HTML table model, satisfies the given pattern. Columns declared with `#!html <colgroup>` and
+`#!html <col>` (including their `span`), and the `colspan` and `rowspan` of cells, are all taken into account.
+A cell that spans multiple columns matches if any of the columns it covers satisfies the pattern. Nested tables
+are each evaluated against their own columns. Elements that are not cells of a table match nothing.
+
+-   The keywords `even` and `odd` will respectively select cells whose column position is either even or odd.
+    The index of the first column is `1`.
+
+-   Patterns in the form `an+b` select cells based on their column position, for every positive integer or zero
+    value of `n`. The index of the first column is `1`. The values `a` and `b` must both be integers.
+
+/// tab | Syntax
+```css
+td:nth-col(even)
+td:nth-col(odd)
+td:nth-col(2)
+td:nth-col(2n+2)
+```
+///
+
+/// tab | Usage
+```py play
+from bs4 import BeautifulSoup as bs
+html = """
+<html>
+<head></head>
+<body>
+<table>
+<tr>
+<td id="0"></td>
+<td id="1"></td>
+<td id="2"></td>
+</tr>
+<tr>
+<td id="3" colspan="2"></td>
+<td id="4"></td>
+</tr>
+</table>
+</body>
+</html>
+"""
+soup = bs(html, 'html5lib')
+soup.select('td:nth-col(2)')
+soup.select('td:nth-col(odd)')
+```
+///
+
+> [!tip] Additional Reading
+> https://developer.mozilla.org/en-US/docs/Web/CSS/:nth-col
+
+## `#!css :nth-last-col()`:material-flask:{: title="Experimental" data-md-color-primary="purple" .icon} {:#:nth-last-col}
+
+`#!css :nth-last-col()` matches the cells (`#!html <td>` and `#!html <th>`) of an HTML table whose column position,
+counting back from the last column of the table, satisfies the given pattern. It follows the same table model as
+[`:nth-col()`](#:nth-col).
+
+-   The keywords `even` and `odd` will respectively select cells whose column position, counting from the end,
+    is either even or odd. The index of the last column is `1`.
+
+-   Patterns in the form `an+b` select cells based on their column position, for every positive integer or zero
+    value of `n`. The index of the last column is `1`. The values `a` and `b` must both be integers.
+
+/// tab | Syntax
+```css
+td:nth-last-col(even)
+td:nth-last-col(odd)
+td:nth-last-col(2)
+td:nth-last-col(2n+2)
+```
+///
+
+/// tab | Usage
+```py play
+from bs4 import BeautifulSoup as bs
+html = """
+<html>
+<head></head>
+<body>
+<table>
+<tr>
+<td id="0"></td>
+<td id="1"></td>
+<td id="2"></td>
+</tr>
+<tr>
+<td id="3" colspan="2"></td>
+<td id="4"></td>
+</tr>
+</table>
+</body>
+</html>
+"""
+soup = bs(html, 'html5lib')
+soup.select('td:nth-last-col(1)')
+soup.select('td:nth-last-col(even)')
+```
+///
+
+> [!tip] Additional Reading
+> https://developer.mozilla.org/en-US/docs/Web/CSS/:nth-last-col
+
 ## `#!css :nth-last-child()` {:#:nth-last-child}
 
 `#!css :nth-last-child()` matches elements based on their position in a group of siblings, counting from the end.

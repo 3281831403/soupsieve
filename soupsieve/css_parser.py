@@ -131,7 +131,9 @@ PSEUDO_SPECIAL = {
     ':dir',
     ':lang',
     ':nth-child',
+    ':nth-col',
     ':nth-last-child',
+    ':nth-last-col',
     ':nth-last-of-type',
     ':nth-of-type'
 }
@@ -201,15 +203,20 @@ PAT_PSEUDO_NTH_TYPE = fr'''
 (?P<pseudo_nth_type>{PAT_PSEUDO_CLASS_SPECIAL}
 (?P<nth_type>{NTH}|even|odd)){WSC}*+\)
 '''
+# Pseudo class `nth-col` (`:nth-col(an+b)`, etc.)
+PAT_PSEUDO_NTH_COL = fr'''
+(?P<pseudo_nth_col>{PAT_PSEUDO_CLASS_SPECIAL}
+(?P<nth_col>{NTH}|even|odd)){WSC}*+\)
+'''
 # Pseudo class language (`:lang("*-de", en)`)
 PAT_PSEUDO_LANG = fr'{PAT_PSEUDO_CLASS_SPECIAL}(?P<values>{VALUE}(?:{WSC}*+,{WSC}*+{VALUE})*+){WSC}*+\)'
 # Pseudo class direction (`:dir(ltr)`)
 PAT_PSEUDO_DIR = fr'{PAT_PSEUDO_CLASS_SPECIAL}(?P<dir>{IDENTIFIER}){WSC}*+\)'
-# Combining characters (`>`, `~`, ` `, `+`, `,`) along with any comments and whitespace around them.
+# Combining characters (`>`, `~`, ` `, `+`, `,`, `||`) along with any comments and whitespace around them.
 # A run of comments and whitespace is matched all at once. `ws` captures whether the run has whitespace
 # before the relation, as a run of only comments does not combine selectors.
 PAT_COMBINE = fr'''
-(?=[,+>~]|{WS}|/\*){COMMENTS}*+(?:(?P<ws>{WS}){WSC}*+)?+(?P<relation>[,+>~])?+{WSC}*+
+(?=[,+>~|]|{WS}|/\*){COMMENTS}*+(?:(?P<ws>{WS}){WSC}*+)?+(?P<relation>[,+>~]|\|\|)?+{WSC}*+
 '''
 # Extra: Contains (`:contains(text)`)
 PAT_PSEUDO_CONTAINS = fr'{PAT_PSEUDO_CLASS_SPECIAL}(?P<values>{VALUE}(?:{WSC}*+,{WSC}*+{VALUE})*+){WSC}*+\)'
@@ -795,6 +802,7 @@ class CSSParser:
                 ),
                 ("pseudo_nth_child", (':nth-child', ':nth-last-child'), PAT_PSEUDO_NTH_CHILD, SelectorPattern),
                 ("pseudo_nth_type", (':nth-of-type', ':nth-last-of-type'), PAT_PSEUDO_NTH_TYPE, SelectorPattern),
+                ("pseudo_nth_col", (':nth-col', ':nth-last-col'), PAT_PSEUDO_NTH_COL, SelectorPattern),
                 ("pseudo_lang", (':lang',), PAT_PSEUDO_LANG, SelectorPattern),
                 ("pseudo_dir", (':dir',), PAT_PSEUDO_DIR, SelectorPattern)
             )
@@ -1064,6 +1072,8 @@ class CSSParser:
         mdict = m.groupdict()
         if mdict.get('pseudo_nth_child'):
             postfix = '_child'
+        elif mdict.get('pseudo_nth_col'):
+            postfix = '_col'
         else:
             postfix = '_type'
         mdict['name'] = util.lower(css_unescape(mdict['name']))
@@ -1120,6 +1130,10 @@ class CSSParser:
                 sel.nth.append(ct.SelectorNth(s1, var, s2, True, False, ct.SelectorList()))
             elif pseudo_sel == ':nth-last-of-type':
                 sel.nth.append(ct.SelectorNth(s1, var, s2, True, True, ct.SelectorList()))
+            elif pseudo_sel == ':nth-col':
+                sel.nth.append(ct.SelectorNth(s1, var, s2, False, False, ct.SelectorList(), col=True))
+            elif pseudo_sel == ':nth-last-col':
+                sel.nth.append(ct.SelectorNth(s1, var, s2, False, True, ct.SelectorList(), col=True))
         has_selector = True
         return has_selector, context
 
@@ -1364,7 +1378,7 @@ class CSSParser:
                 raise NotImplementedError(f"Pseudo-element found at position {m.start(0)}")
             elif key == 'pseudo_contains':
                 ctx.has_selector = self.parse_pseudo_contains(ctx.sel, m, ctx.has_selector)
-            elif key in ('pseudo_nth_type', 'pseudo_nth_child'):
+            elif key in ('pseudo_nth_type', 'pseudo_nth_child', 'pseudo_nth_col'):
                 ctx.has_selector, child = self.parse_pseudo_nth(ctx.sel, m, ctx.has_selector)
             elif key == 'pseudo_lang':
                 ctx.has_selector = self.parse_pseudo_lang(ctx.sel, m, ctx.has_selector)

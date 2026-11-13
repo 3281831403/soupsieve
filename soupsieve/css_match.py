@@ -33,6 +33,7 @@ REL_PARENT = ' '
 REL_CLOSE_PARENT = '>'
 REL_SIBLING = '~'
 REL_CLOSE_SIBLING = '+'
+REL_COLUMN = '||'
 
 # Relationships for :has() (forward looking)
 REL_HAS_PARENT = ': '
@@ -114,6 +115,17 @@ class TreeForms(NamedTuple):
     defaults: dict[int, bs4.Tag]
     # The last radio button with a `checked` attribute of each radio button group, by form owner and name
     checked: dict[tuple[int, str], bs4.Tag]
+
+
+class TableColumns(NamedTuple):
+    """The column model of a table. Cells are tracked by `id()` as `bs4` hashes them by their content."""
+
+    # The `(start, end)` column range of each cell, `end` exclusive
+    cells: dict[int, tuple[int, int]]
+    # The `col` element that represents each column, if there is one
+    cols: list[bs4.Tag | None]
+    # The total number of columns in the table
+    total: int
 
 
 class _DocumentNav:
@@ -644,6 +656,7 @@ class CSSMatch(_DocumentNav):
         self.cached_meta_lang: list[tuple[str, str]] = []
         self.cached_forms: dict[int, TreeForms] = {}
         self.cached_options: dict[int, dict[int, bool]] = {}
+        self.cached_tables: dict[int, TableColumns] = {}
         self.selectors = selectors
         self.namespaces: ct.Namespaces | dict[str, str] = {} if namespaces is None else namespaces
         self.flags = flags
@@ -1111,6 +1124,8 @@ class CSSMatch(_DocumentNav):
         elif relation[0].rel_type == REL_CLOSE_SIBLING:
             sibling = self.get_previous_tag(el)
             found = sibling is not None and (yield sibling, relation)
+        elif relation[0].rel_type == REL_COLUMN:
+            found = yield from self.match_column(el, relation)
         return found
 
     def match_future_child(
@@ -1268,6 +1283,177 @@ class CSSMatch(_DocumentNav):
             (self.get_tag_ns(child) == self.get_tag_ns(el))
         )
 
+    def get_span(self, el: bs4.Tag, name: str, maximum: int) -> int:
+        """
+        Get a `span`, `colspan` or `rowspan` attribute as a positive integer no greater than `maximum`.
+
+        A missing or invalid value defaults to 1. A `rowspan` of 0 spans the rows to the end of the
+        table, which the maximum stands in for. Negative values are treated as 1, as browsers do.
+        """
+
+        value = self.get_attribute_by_name(el, name)
+        span = 1
+        if isinstance(value, str):
+            try:
+                span = int(value.strip(), 10)
+            except ValueError:
+                span = 1
+        if span <= 0:
+            span = maximum if name == 'rowspan' and span == 0 else 1
+        return min(span, maximum)
+
+    def get_enclosing_table(self, el: bs4.Tag) -> bs4.Tag | None:
+        """Get the nearest ancestor HTML `table` of an element, if there is one."""
+
+        parent = self.get_parent(el)
+        while parent is not None:
+            if self.is_html_tag(parent) and self.get_tag(parent) == 'table':
+                return parent
+            parent = self.get_parent(parent)
+        return None
+
+    def iter_table_rows(self, table: bs4.Tag) -> Iterator[bs4.Tag]:
+        """
+        Iterate the rows of a table in document order.
+
+        The rows of a nested table belong to that table, so one is never entered.
+        """
+
+        stack = [self.get_tag_children(table)]
+        while stack:
+            for child in stack[-1]:
+                if not self.is_html_tag(child):
+                    continue
+                name = self.get_tag(child)
+                if name == 'tr':
+                    yield child
+                elif name != 'table':
+                    stack.append(self.get_tag_children(child))
+                    break
+            else:
+                stack.pop()
+
+    def get_table_columns(self, table: bs4.Tag) -> TableColumns:
+        """
+        Get the column model of an HTML table.
+
+        Columns declared with `colgroup` and `col` come first: a `colgroup` with `col` children
+        ignores its own `span`, while one without represents `span` columns that have no `col`
+        element. Then the cells of each row are placed on a grid following the HTML table model:
+        a cell occupies the first free column and covers `colspan` columns, and a `rowspan` holds
+        its columns occupied for the rows that follow. A cell that spans columns counts for each
+        of them. The table is as wide as its widest row or its declared columns, whichever is more.
+
+        This requires a pass through the whole table, so it is cached instead of computing
+        the model again for every cell.
+        """
+
+        key = id(table)
+        model = self.cached_tables.get(key)
+        if model is not None:
+            return model
+
+        # Columns declared with `colgroup` and `col`
+        cols: list[bs4.Tag | None] = []
+        for child in self.get_tag_children(table):
+            if not self.is_html_tag(child):
+                continue
+            name = self.get_tag(child)
+            if name == 'colgroup':
+                declared = [
+                    col for col in self.get_tag_children(child)
+                    if self.is_html_tag(col) and self.get_tag(col) == 'col'
+                ]
+                if declared:
+                    for col in declared:
+                        cols.extend([col] * self.get_span(col, 'span', 1000))
+                else:
+                    cols.extend([None] * self.get_span(child, 'span', 1000))
+            elif name == 'col':
+                cols.extend([child] * self.get_span(child, 'span', 1000))
+
+        # Place the cells of each row on the grid. `occupied` tracks how many more rows
+        # each column is held by a `rowspan`, counting down at the end of each row.
+        cells: dict[int, tuple[int, int]] = {}
+        occupied: dict[int, int] = {}
+        width = 0
+        for row in self.iter_table_rows(table):
+            x = 0
+            for cell in self.get_tag_children(row):
+                if not self.is_html_tag(cell) or self.get_tag(cell) not in ('td', 'th'):
+                    continue
+                while occupied.get(x, 0) > 0:
+                    x += 1
+                colspan = self.get_span(cell, 'colspan', 1000)
+                rowspan = self.get_span(cell, 'rowspan', 65534)
+                cells[id(cell)] = (x, x + colspan)
+                if rowspan > 1:
+                    for i in range(x, x + colspan):
+                        occupied[i] = rowspan
+                x += colspan
+            width = max(width, x)
+            for i in list(occupied):
+                if occupied[i] > 0:
+                    occupied[i] -= 1
+
+        model = TableColumns(cells, cols, max(len(cols), width))
+        if self.enable_cache:
+            self.cached_tables[key] = model
+        return model
+
+    def match_col_nth(self, el: bs4.Tag, n: ct.SelectorNth) -> bool:
+        """
+        Match `:nth-col()` or `:nth-last-col()`.
+
+        Only a cell (`td` or `th`) of an HTML table can match, and it matches if any of the
+        columns it covers satisfies the `nth` requirement. `:nth-last-col()` counts columns
+        back from the last column of the table. An element that is not in a table, or is not
+        a cell, matches nothing.
+        """
+
+        table = self.get_enclosing_table(el)
+        if table is None:
+            return False
+        model = self.get_table_columns(table)
+        span = model.cells.get(id(el))
+        if span is None:
+            return False
+        start, end = span
+        total = model.total
+        for col in range(start, end):
+            rindex = total - col if n.last else col + 1
+            if n.a != 0:
+                v = (rindex - n.b) / n.a
+                if v.is_integer() and v >= 0:
+                    return True
+            elif rindex == n.b:
+                return True
+        return False
+
+    def match_column(self, el: bs4.Tag, relation: ct.SelectorList) -> MatchGenerator:
+        """
+        Match the column combinator.
+
+        The right hand side matches a cell of an HTML table if a `col` element that represents
+        one of the columns the cell covers matches the left hand side. A table without `col`
+        elements matches nothing, as does an element that is not a cell in a table.
+        """
+
+        found = False
+        table = self.get_enclosing_table(el)
+        if table is not None:
+            model = self.get_table_columns(table)
+            span = model.cells.get(id(el))
+            if span is not None:
+                seen: set[int] = set()
+                for col in model.cols[span[0]:span[1]]:
+                    if col is not None and id(col) not in seen:
+                        seen.add(id(col))
+                        if (yield col, relation):
+                            found = True
+                            break
+        return found
+
     def match_nth(self, el: bs4.Tag, nth: tuple[ct.SelectorNth, ...]) -> MatchGenerator:
         """Match `nth` elements."""
 
@@ -1283,6 +1469,13 @@ class CSSMatch(_DocumentNav):
         # Test element against the `nth` selectors.
         matched = True
         for n in nth:
+            # Column `nth` selectors (`:nth-col`, `:nth-last-col`) follow the table
+            # column model instead of counting siblings.
+            if n.col:
+                matched = self.match_col_nth(el, n)
+                if not matched:
+                    break
+                continue
             matched = False
             last = n.last
             key = None

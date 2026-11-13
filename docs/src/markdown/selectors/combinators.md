@@ -168,6 +168,55 @@ soup.select('h1 + p')
 > [!tip] Additional Reading
 > https://developer.mozilla.org/en-US/docs/Web/CSS/Adjacent_sibling_combinator
 
+## Column Combinator
+
+Column combinators combine two selectors with `#!css ||` in order to signify that the second element is matched
+if it is a cell (`#!html <td>` or `#!html <th>`) of an HTML table and belongs to a column represented by a
+`#!html <col>` element matched by the first selector. Columns follow the HTML table model: the `span` of
+`#!html <col>` and `#!html <colgroup>`, and the `colspan` and `rowspan` of cells, are all taken into account, and
+a cell that spans multiple columns belongs to each of them. A table without `#!html <col>` elements, and elements
+that are not cells of a table, match nothing.
+
+/// tab | Syntax
+```css
+col.cheap || td
+```
+///
+
+/// tab | Usage
+```py play
+from bs4 import BeautifulSoup as bs
+html = """
+<html>
+<head></head>
+<body>
+<table>
+<colgroup>
+<col class="name">
+<col class="price" span="2">
+</colgroup>
+<tr>
+<td>apple</td>
+<td>1.00</td>
+<td>0.50</td>
+</tr>
+<tr>
+<td>banana</td>
+<td>2.00</td>
+<td>1.00</td>
+</tr>
+</table>
+</body>
+</html>
+"""
+soup = bs(html, 'html5lib')
+soup.select('col.price || td')
+```
+///
+
+> [!tip] Additional Reading
+> https://developer.mozilla.org/en-US/docs/Web/CSS/Column_combinator
+
 --8<--
 selector_styles.md
 --8<--
